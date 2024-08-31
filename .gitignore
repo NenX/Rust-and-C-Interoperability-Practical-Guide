@@ -1,0 +1,8 @@
+build/
+.vscode/
+*.o
+*.out
+
+*.dump
+target/
+node_modules
