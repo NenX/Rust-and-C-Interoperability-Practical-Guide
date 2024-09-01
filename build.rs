@@ -1,4 +1,5 @@
-// 这是我们的构建脚本，在编译开始前，告诉 Rustc 怎么去找到我们的冬
+// 这是我们的构建脚本
+// This is our build script
 use std::ffi::OsStr;
 use std::path::Path;
 use std::{env, fs};
@@ -16,7 +17,7 @@ fn move_dylib_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<()> {
         let ext = path.extension();
         if path.is_file() && (ext == Some(OsStr::new("dll")) || ext == Some(OsStr::new("so"))) {
             let dest_path = to_dir.join(path.file_name().unwrap());
-            println!("cargo:warning=move {path:?} to {dest_path:?}");
+            println!("cargo::warning=move file from {path:?} to {dest_path:?}");
             fs::copy(&path, &dest_path)?;
         }
     }
@@ -33,9 +34,9 @@ fn main() {
     cc::Build::new().file("c/add.c").compile("add");
 
     let libs_dir = "./src_lib/lib_build";
-    println!("cargo:rustc-link-search=native={}", libs_dir);
-    println!("cargo:rustc-link-lib=dylib=dylib_for_rust");
-    println!("cargo:rustc-link-lib=static=static_for_rust");
+    println!("cargo::rustc-link-search=native={}", libs_dir);
+    println!("cargo::rustc-link-lib=dylib=dylib_for_rust");
+    println!("cargo::rustc-link-lib=static=static_for_rust");
 
     move_dylib_files(&Path::new(&lib_dir), &Path::new(&profile_dir))
         .expect("failed to move dylib files");
