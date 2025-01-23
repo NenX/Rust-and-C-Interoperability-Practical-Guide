@@ -38,6 +38,6 @@ fn main() {
     println!("cargo::rustc-link-lib=dylib=dylib_for_rust");
     println!("cargo::rustc-link-lib=static=static_for_rust");
 
-    move_dylib_files(&Path::new(&lib_dir), &Path::new(&profile_dir))
+    move_dylib_files(Path::new(&lib_dir), Path::new(&profile_dir))
         .expect("failed to move dylib files");
 }

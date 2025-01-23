@@ -7,8 +7,20 @@ This tutorial was inspired by [rust-ffi-to-c](https://github.com/vanjacosic/rust
 This is a nanny tutorial on how to call C libraries from Rust.
 
 This repository has the final code for this tutorial, and it works well on both Windows and Linux.
+First clone the library, then:
 
-Clone it and run it using `cargo run`.
+## Run first time, Linux
+```shell
+$ ./build_lib_and_run.sh
+
+```
+## Run first time, Windows
+```shell
+$ ./build_lib_and_run.ps1
+
+```
+## Next steps
+Later on you can do, `cargo run`.
 
 ```shell
 $ cargo run
