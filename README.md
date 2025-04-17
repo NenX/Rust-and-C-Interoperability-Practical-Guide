@@ -4,23 +4,23 @@ English · [中文](./README-zh_CN.md)
 
 This tutorial was inspired by [rust-ffi-to-c](https://github.com/vanjacosic/rust-ffi-to-c)
 
-This is a nanny tutorial on how to call C libraries from Rust.
+A step-by-step guide on integrating C libraries with Rust applications.
 
-This repository has the final code for this tutorial, and it works well on both Windows and Linux.
-First clone the library, then:
+This repository contains complete working code for both Windows and Linux platforms.
+To get started:
 
-## Run first time, Linux
+## First Run on Linux
 ```shell
 $ ./build_lib_and_run.sh
 
 ```
-## Run first time, Windows
+## First Run on Windows
 ```shell
 $ ./build_lib_and_run.ps1
 
 ```
-## Next steps
-Later on you can do, `cargo run`.
+## Subsequent Runs
+For subsequent runs, simply use `cargo run`.
 
 ```shell
 $ cargo run
@@ -49,16 +49,16 @@ warning: test_ffi@0.1.0: move "./src_lib/lib_build/dylib_for_rust.dll" to "./tar
 
 ## Tutorial
 
-In this tutorial, Rust's interaction with C takes two forms. In the first form, Cargo will compile programs written in C, and Rust calls the functions in them. In another form, we need to deal with C libraries, both static and dynamic.
+This guide covers two primary methods of Rust-C interoperability. The first method demonstrates how to compile C code directly through Cargo and call its functions from Rust. The second method shows how to work with pre-compiled C libraries, both static and dynamic.
 
+### 1. Compiling and Calling C Code through Cargo
 
-### 1. Compile the C source code through Cargo and call the functions in Rust.
+Let's start by creating a new project:
+```shell
+cargo new hello-ffi
+```
 
-First, we need to execute `cargo new hello-ffi` to create a completely new project to conduct our experiment.
-
-Now, let's say we have some C source code, create a new `c/add.c` file, and we need to call the `add()` function in Rust.
-
-
+First, create a C source file `c/add.c` containing a simple addition function that we'll call from Rust:
 
 ```c
 // add.c
@@ -78,8 +78,8 @@ This function takes two arguments of type `int32_t`, computes their sum, and ret
 
 
 
-The next step of work, we need to install [`cc`](https://crates.io/crates/cc) crate.
 
+Next, we'll need the [`cc`](https://crates.io/crates/cc) crate to handle C code compilation:
 
 
 ```toml
@@ -87,9 +87,7 @@ The next step of work, we need to install [`cc`](https://crates.io/crates/cc) cr
 cc = "1.0"
 ```
 
-Then create a `build.rs` file in the project root and write our build script, which tells Cargo how to properly compile our C source code.
-
-
+Create a `build.rs` file in the project root to configure C code compilation:
 
 ```rust
 extern crate cc;
@@ -98,9 +96,8 @@ fn main() {
     cc::Build::new().file("c/add.c").compile("add");
 }
 ```
-Before rustc starts compiling our Rust program, the `build.rs` file will be called to compile the C source code.
 
-But we also need to tell rustc what our C function looks like. Modify `src/main.rs`:
+Now we'll define the foreign function interface in `src/main.rs`:
 
 ```rust
 // This is our entry file for calling both static and dynamic libraries
@@ -138,11 +135,19 @@ And now we can use Cargo to build both the C and Rust code and run the program:
 $ cargo clean && cargo run
 ```
 
-### 2. Link the C library and call the functions in it.
+### 2. Working with Pre-compiled C Libraries
 
-Let's say you got some dynamic and static C libraries from somewhere else, and now you need to call those library functions in Rust.
+Let's explore how to work with pre-existing C libraries (both static and dynamic) in your Rust project.
 
-Create a new `src_lib/lib_build` folder to store the C library files (of course you can copy the corresponding files in this repository for experiments). Modify `build.rs` to tell Cargo how to link these library files.
+To work with existing C libraries:
+
+1. Create a `src_lib/lib_build` directory in your project:
+
+2. Place your library files in directory `src_lib/lib_build/`:
+    - Static library files (`.lib` on Windows, `.a` on Linux)
+    - Dynamic library files (`.dll` on Windows, `.so` on Linux)
+
+Then update `build.rs` to handle library linking:
 
 ```rust
 use std::ffi::OsStr;
@@ -224,8 +229,8 @@ fn main() {
 }
 
 ```
-And now we can use Cargo to link the C libraries and run the program:
 
+To build and run the project:
 ```shell
 $ cargo clean && cargo run
 ```
