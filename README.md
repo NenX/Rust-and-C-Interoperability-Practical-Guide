@@ -1,10 +1,28 @@
 # Rust and C Interoperability Practical Guide
 
-English · [中文](./README-zh_CN.md)
-
-
+[English](./README.md) · 中文
 
 This tutorial systematically introduces how to integrate C code into a Rust project, how to use Rust to compile dynamic and static libraries that conform to the C ABI, and how to call these libraries from Rust. It is suitable for developers with some Rust/C experience.
+
+This repository contains the final code for the tutorial, which works well on both Windows and Linux.
+
+Clone it and run with `cargo run`:
+```shell
+[Rust] Calling function in C source code
+[C source] Hello Lucy
+[C source] The result (1 + 2) is 3!
+[Rust] Result from C source code: 3
+
+[Rust] Calling function in dynamic library
+[Rust cdylib] Hello Lee
+[Rust cdylib] The result (1 + 2) is 3!
+[Rust] Result from dynamic library: 3
+
+[Rust] Calling function in static library
+[Rust staticlib] Hello Chen
+[Rust staticlib] The result (3 + 4) is 7!
+[Rust] Result from static library: 7
+```
 
 ---
 
@@ -120,13 +138,9 @@ fn main() {
 }
 ```
 
-Run:
+Run `cargo run`
 
-```shell
-cargo run
-```
-
-Sample output:
+Output:
 
 ```
 [Rust] Calling C source
@@ -286,13 +300,9 @@ fn main() {
 }
 ```
 
-Run:
+Run `cargo run`
 
-```shell
-cargo run
-```
-
-Sample output:
+Output:
 
 ```
 [Rust] Calling C source

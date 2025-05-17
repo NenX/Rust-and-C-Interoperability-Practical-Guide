@@ -6,6 +6,27 @@
 
 本教程系统介绍如何在 Rust 工程中集成 C 代码、如何用 Rust 编译出遵循 C 语言二进制接口（ABI）的动态库和静态库，以及如何在 Rust 中调用这些库。适合有一定 Rust/C 基础的开发者。
 
+
+这个存储库包含本教程的最终代码，它在Windows和Linux上都能很好地工作。
+
+克隆它并使用 `cargo run` 运行：
+```shell
+[Rust] Calling function in C source code
+[C source] Hello Lucy
+[C source] The result (1 + 2) is 3!
+[Rust] Result from C source code: 3
+
+[Rust] Calling function in dynamic library
+[Rust cdylib] Hello Lee
+[Rust cdylib] The result (1 + 2) is 3!
+[Rust] Result from dynamic library: 3
+
+[Rust] Calling function in static library
+[Rust staticlib] Hello Chen
+[Rust staticlib] The result (3 + 4) is 7!
+[Rust] Result from static library: 7
+```
+
 ---
 
 ## 1. 在 Rust 工程中集成 C 代码
@@ -120,13 +141,11 @@ fn main() {
 }
 ```
 
-执行：
+执行 `cargo run`
 
-```shell
-cargo run
-```
 
-输出示例：
+
+输出：
 
 ```
 [Rust] 调用 C 源码
@@ -286,13 +305,11 @@ fn main() {
 }
 ```
 
-执行：
+执行 `cargo run`
 
-```shell
-cargo run
-```
 
-输出示例：
+
+输出：
 
 ```
 [Rust] 调用 C 源码
