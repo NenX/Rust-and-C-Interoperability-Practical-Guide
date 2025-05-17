@@ -1,6 +1,8 @@
 # Rust and C Interoperability Practical Guide
 
-[English](./README.md) · 中文
+English · [中文](./README-zh_CN.md)
+
+
 
 This tutorial systematically introduces how to integrate C code into a Rust project, how to use Rust to compile dynamic and static libraries that conform to the C ABI, and how to call these libraries from Rust. It is suitable for developers with some Rust/C experience.
 
