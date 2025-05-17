@@ -204,7 +204,7 @@ Build:
 cargo build
 ```
 
-After building, `cdylib_gen.dll` (on Windows) will be generated in `target/debug/`.
+After building, `cdylib_gen.dll` (on Windows, or `libcdylib_gen.so` on Linux) will be generated in `target/debug/`.
 
 ### 2.2 Compile a Static Library (staticlib)
 
@@ -251,7 +251,7 @@ Build:
 cargo build
 ```
 
-After building, `staticlib_gen.lib` (on Windows) will be generated in `target/debug/`.
+After building, `staticlib_gen.lib` (on Windows, or `libstaticlib_gen.a` on Linux) will be generated in `target/debug/`.
 
 ---
 
@@ -273,14 +273,19 @@ Edit `build.rs` and add the following:
 fn main() {
     // ...existing code...
     let profile = std::env::var("PROFILE").unwrap();
-    let search_dir = format!("../../target/{}", profile); // Note the path
-    println!("cargo:rustc-link-search=native={}", search_dir);
-    println!("cargo:rustc-link-lib=dylib=cdylib_gen");
-    println!("cargo:rustc-link-lib=static=staticlib_gen");
+    let search_dir = format!("target/{}", profile);
+    println!("cargo::rustc-link-search=native={}", search_dir);
+    if cfg!(target_os = "windows") {
+        println!("cargo::rustc-link-lib=dylib=cdylib_gen.dll");
+        println!("cargo::rustc-link-lib=static=staticlib_gen");
+    } else {
+        println!("cargo::rustc-link-lib=dylib=cdylib_gen");
+        println!("cargo::rustc-link-lib=static=staticlib_gen");
+    }
 }
 ```
 
-> **Note**: `cdylib_gen.dll` and `staticlib_gen.lib` must be in the `target/{profile}` directory, or specify the path via `cargo:rustc-link-search`.
+> **Note**: The dynamic and static libraries must be in the `target/{profile}` directory, or specify the path via `cargo:rustc-link-search`.
 
 ### 3.2 Call Library Functions in main.rs
 
