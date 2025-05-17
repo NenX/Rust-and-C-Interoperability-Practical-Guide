@@ -207,7 +207,7 @@ pub extern "C" fn cdylib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int {
 cargo build
 ```
 
-编译完成后，在 `target/debug/` 下会生成 `cdylib_gen.dll`（Windows 下）。
+编译完成后，在 `target/debug/` 下会生成 `cdylib_gen.dll`（Windows 下, 在 Linux 下是 libcdylib_gen.so）。
 
 ### 2.2 编译静态库（staticlib）
 
@@ -254,7 +254,7 @@ pub extern "C" fn staticlib_add(a: c_int, b: c_int, result: *mut c_char) -> c_in
 cargo build
 ```
 
-编译完成后，在 `target/debug/` 下会生成 `staticlib_gen.lib`（Windows 下）。
+编译完成后，在 `target/debug/` 下会生成 `staticlib_gen.lib`（Windows 下, 在 Linux 下是 libstaticlib_gen.a）。
 
 ---
 
@@ -276,14 +276,19 @@ cd ../call_libs
 fn main() {
     // ...已有代码...
     let profile = std::env::var("PROFILE").unwrap();
-    let search_dir = format!("../../target/{}", profile); // 注意路径
-    println!("cargo:rustc-link-search=native={}", search_dir);
-    println!("cargo:rustc-link-lib=dylib=cdylib_gen");
-    println!("cargo:rustc-link-lib=static=staticlib_gen");
+    let search_dir = format!("target/{}", profile);
+    println!("cargo::rustc-link-search=native={}", search_dir);
+    if cfg!(target_os = "windows") {
+        println!("cargo::rustc-link-lib=dylib=cdylib_gen.dll");
+        println!("cargo::rustc-link-lib=static=staticlib_gen");
+    } else {
+        println!("cargo::rustc-link-lib=dylib=cdylib_gen");
+        println!("cargo::rustc-link-lib=static=staticlib_gen");
+    }
 }
 ```
 
-> **注意**：`cdylib_gen.dll` 和 `staticlib_gen.lib` 需位于 `target/{profile}` 目录下，或通过 `cargo:rustc-link-search` 指定路径。
+> **注意**：动态库和静态库需位于 `target/{profile}` 目录下，或通过 `cargo:rustc-link-search` 指定路径。
 
 ### 3.2 在 main.rs 调用库函数
 
