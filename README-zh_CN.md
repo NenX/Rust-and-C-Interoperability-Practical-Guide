@@ -1,213 +1,333 @@
-# 如何从Rust调用C库
+# Rust 与 C 交互实践教程
 
 [English](./README.md) · 中文
 
-本教程的灵感来自 [rust-ffi-to-c](https://github.com/vanjacosic/rust-ffi-to-c)
 
-这是一个关于如何从Rust调用C库的保姆教程。
 
-这个存储库包含本教程的最终代码，它在Windows和Linux上都能很好地工作。
+本教程系统介绍如何在 Rust 工程中集成 C 代码、如何用 Rust 编译出遵循 C 语言二进制接口（ABI）的动态库和静态库，以及如何在 Rust 中调用这些库。适合有一定 Rust/C 基础的开发者。
 
-克隆它并使用 `cargo run` 运行.
+---
+
+## 1. 在 Rust 工程中集成 C 代码
+
+本节介绍如何在 Rust 项目中直接集成和调用 C 语言源码。
+
+### 1.1 新建 Workspace
+
+首先，新建一个 workspace，并配置成员：
 
 ```shell
-$ cargo run
-
-warning: test_ffi@0.1.0: move "./src_lib/lib_build/libdylib_for_rust.so" to "./target/debug/libdylib_for_rust.so"
-warning: test_ffi@0.1.0: move "./src_lib/lib_build/dylib_for_rust.dll" to "./target/debug/dylib_for_rust.dll"
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
-     Running `target/debug/test_ffi`
-
-[Rust] Calling function in C file
-[C] source: Argument a is:{ 1 }, Argument b is:{ 5 }
-[C] source: returning the result { 6 } to Rust
-[Rust] Result from c file: 6
-
-[Rust] Calling function in static library
-[C] static_call: Argument a is:{ 10 }, Argument b is:{ 5 }
-[C] static_call: returning the result { 15 } to Rust
-[Rust] Result from static library: 15
-
-[Rust] Calling function in dynamic library
-[C] dylib_call: Argument a is:{ 100 }, Argument b is:{ 5 }
-[C] dylib_call: returning the result { 105 } to Rust
-[Rust] Result from dynamic library: 105
-
+cargo new my_workspace --lib
+cd my_workspace
 ```
 
-## 教程
+编辑根目录下 `Cargo.toml`：
 
-在本教程中，Rust 与 C 的交互采用两种形式。第一种，由 Cargo 编译C源码程序，Rust 调用其中的函数。第二种，我们需要处理静态和动态的C库。
+```toml
+[workspace]
+members = ["packages/*"]
+```
 
+新建 `packages` 目录并进入：
 
-### 1. 通过 Cargo 编译 C 源代码，并在 Rust 中调用函数。
+```shell
+mkdir packages
+cd packages
+```
 
-首先，我们需要执行 `cargo new hello-ffi` 来创建一个全新的项目来执行我们的实验。
+创建一个 bin crate 用于集成 C 代码：
 
-现在，假设我们有一些 C 源代码，创建一个新的 `c/add.c` 文件，我们需要在Rust中调用 `add()` 这个函数。
+```shell
+cargo new call_libs
+cd call_libs
+```
+
+### 1.2 添加 C 源码
+
+在 call_libs 下新建 C 源码文件，实现你需要的 C 函数。
+
+新建 `c` 目录，并添加 `clib.c` 文件：
 
 ```c
-// add.c
 #include <stdio.h>
 #include <stdint.h>
 
-int32_t add(int32_t a, int32_t b)
-{
-    int32_t result = a + b;
-    printf("[C] source: Argument a is:{ %i }, Argument b is:{ %i } \n", a, b);
-    printf("[C] source: returning the result { %i } to Rust\n", result);
-    return result;
+int32_t add(int32_t a, int32_t b, char *result) {
+    printf("[C source] Hello %s\n", result);
+    int32_t sum = a + b;
+    sprintf(result, "[C source] The result (%d + %d) is %d!", a, b, sum);
+    return sum;
 }
-
 ```
-这个函数接受 `int32_t` 类型的两个参数，计算它们的和并将其返回给调用者。
 
+### 1.3 配置 Cargo.toml
 
-下一步的工作，我们需要安装 [`cc`](https://crates.io/crates/cc) crate.
+为项目添加 `cc` 依赖，用于自动编译 C 源码。
 
-
+在 `packages/call_libs/Cargo.toml` 添加 `cc` 作为 build-dependencies：
 
 ```toml
 [build-dependencies]
 cc = "1.0"
 ```
 
-然后创建一个 `build.rs` 文件，并编写编译脚本，它告诉 Cargo 如何正确编译 C 源代码。
+### 1.4 编写 build.rs
+
+通过 build 脚本自动编译 C 代码并链接到 Rust 工程。
+
+在 `packages/call_libs` 下新建 `build.rs`：
 
 ```rust
-extern crate cc;
-
 fn main() {
-    cc::Build::new().file("c/add.c").compile("add");
+    cc::Build::new().file("c/clib.c").compile("clib");
 }
 ```
 
-在 rustc 开始编译我们的 Rust 程序之前，`build.rs` 将会被调用来编译 C 源代码。
+### 1.5 在 Rust 中调用 C 函数
 
-但是还需要告诉 rustc 我们的 C 函数长什么样子。修改 `src/main.rs`:
+通过 FFI 声明 C 函数，并在 Rust 代码中安全调用。
+
+编辑 `src/main.rs`：
 
 ```rust
-// This is our entry file for calling both static and dynamic libraries
-extern crate core;
-use core::ffi::c_int;
+use std::ffi::{CStr, c_char, c_int};
 
 extern "C" {
-    fn add(a: c_int, b: c_int) -> c_int;
+    fn add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
+}
+
+fn buf(label: &str, capacity: usize) -> Vec<i8> {
+    let mut b = label.as_bytes().to_vec();
+    b.resize(capacity, 0);
+    b.iter().map(|&i| i as i8).collect()
+}
+
+macro_rules! call_lib_fn {
+    ($fn:expr, $a:expr, $b:expr, $buf:expr, $desc:expr) => {{
+        let mut b = $buf;
+        println!("[Rust] 调用 {}", $desc);
+        let result = $fn($a, $b, b.as_mut_ptr());
+        let msg = unsafe { CStr::from_ptr(b.as_ptr()).to_str().unwrap() };
+        println!("{}", msg);
+        println!("[Rust] {} 返回: {}\n", $desc, result);
+    }};
 }
 
 fn main() {
-
     unsafe {
-        println!("[Rust] Calling function in C file");
-        let result = add(1, 5);
-        println!("[Rust] Result from c file: {} \n", result);
+        call_lib_fn!(add, 1, 2, buf("Lucy", 1024), "C 源码");
     }
 }
-
 ```
 
-
-我们使用 [`extern`](https://doc.rust-lang.org/reference/items/external-blocks.html) 来引用 C 语言编写的 `add()` 函数，
-从 `core:ffi` 导入兼容 C 的整数类型 `c_int` 到 Rust 中。
-
-任何外部函数的使用都被 rustc 认为是不安全的，因为 Rust 编译器不能保证外部代码中的内存安全。
-因此，在的 `src/main.rs` 中，我们在一个 `unsafe` 块中调用该函数，然后传入两个 `i32` 整数，并打印结果。
-
-现在我们可以使用 Cargo 来构建 C 和 Rust 代码并运行程序：
+执行：
 
 ```shell
-$ cargo clean && cargo run
+cargo run
 ```
 
-### 2. 链接 C 库并调用其中的函数。
+输出示例：
 
-假设你从其他地方获得了一些动态和静态 C 库，现在你需要在 Rust 中调用这些库函数。
+```
+[Rust] 调用 C 源码
+[C source] Hello Lucy
+[C source] The result (1 + 2) is 3!
+[Rust] C 源码 返回: 3
+```
 
+> **提示**：如遇到链接错误，检查 C 文件路径、build.rs 配置和依赖项。
 
-创建一个新的 `src_lib/lib_build` 文件夹来存储 C 库文件(当然，您可以在此存储库中复制相应的文件以供实验使用)。修改的 `build.rs` 告诉 Cargo 如何链接这些库文件。
+---
+
+## 2. 用 Rust 编译出遵循 C ABI 的动态库和静态库
+
+本节介绍如何用 Rust 生成可被 C 语言等调用的动态库和静态库。
+
+### 2.1 编译动态库（cdylib）
+
+新建库 crate，配置 crate-type 为 `cdylib`，实现导出函数。
+
+在 `packages` 目录下创建库 crate：
+
+```shell
+cd ..
+cargo new cdylib_gen --lib
+cd cdylib_gen
+```
+
+编辑 `Cargo.toml`，添加 crate-type：
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+```
+
+编辑 `src/lib.rs`：
 
 ```rust
-use std::ffi::OsStr;
-use std::path::Path;
-use std::{env, fs};
+use std::ffi::{CStr, CString, c_char, c_int};
+use std::ptr;
 
-extern crate cc;
-
-fn move_dylib_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<()> {
-    if !to_dir.exists() {
-        fs::create_dir_all(to_dir)?;
+#[no_mangle]
+pub extern "C" fn cdylib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int {
+    let sum = a + b;
+    unsafe {
+        let name = CStr::from_ptr(result).to_str().unwrap();
+        println!("[Rust cdylib] Hello {name}");
+        let msg = format!("[Rust cdylib] The result ({a} + {b}) is {sum}!");
+        let msg = CString::new(msg).unwrap();
+        ptr::copy_nonoverlapping(msg.as_ptr(), result, msg.as_bytes().len() + 1);
     }
-
-    for entry in fs::read_dir(from_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let ext = path.extension();
-        if path.is_file() && (ext == Some(OsStr::new("dll")) || ext == Some(OsStr::new("so"))) {
-            let dest_path = to_dir.join(path.file_name().unwrap());
-            println!("cargo:warning=move {path:?} to {dest_path:?}");
-            fs::copy(&path, &dest_path)?;
-        }
-    }
-
-    Ok(())
+    sum
 }
+```
 
+编译：
+
+```shell
+cargo build
+```
+
+编译完成后，在 `target/debug/` 下会生成 `cdylib_gen.dll`（Windows 下）。
+
+### 2.2 编译静态库（staticlib）
+
+新建库 crate，配置 crate-type 为 `staticlib`，实现导出函数。
+
+同样在 `packages` 目录下，创建静态库 crate：
+
+```shell
+cd ..
+cargo new staticlib_gen --lib
+cd staticlib_gen
+```
+
+编辑 `Cargo.toml`，添加 crate-type：
+
+```toml
+[lib]
+crate-type = ["staticlib"]
+```
+
+编辑 `src/lib.rs`：
+
+```rust
+use std::ffi::{CStr, CString, c_char, c_int};
+use std::ptr;
+
+#[no_mangle]
+pub extern "C" fn staticlib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int {
+    let sum = a + b;
+    unsafe {
+        let name = CStr::from_ptr(result).to_str().unwrap();
+        println!("[Rust staticlib] Hello {name}");
+        let msg = format!("[Rust staticlib] The result ({a} + {b}) is {sum}!");
+        let msg = CString::new(msg).unwrap();
+        ptr::copy_nonoverlapping(msg.as_ptr(), result, msg.as_bytes().len() + 1);
+    }
+    sum
+}
+```
+
+编译：
+
+```shell
+cargo build
+```
+
+编译完成后，在 `target/debug/` 下会生成 `staticlib_gen.lib`（Windows 下）。
+
+---
+
+## 3. 在 Rust 中调用遵循 C ABI 的动态库和静态库
+
+本节介绍如何在 Rust 工程中链接和调用动态库和静态库。
+
+回到 `call_libs` 目录：
+
+```shell
+cd ../call_libs
+```
+
+### 3.1 配置 build.rs 链接库
+
+编辑 `build.rs`，添加如下内容：
+
+```rust
 fn main() {
-    let profile = env::var("PROFILE").unwrap();
-    let profile_dir = format!("./target/{}/", profile);
-    let lib_dir = String::from("./src_lib/lib_build");
-
-    cc::Build::new().file("c/add.c").compile("add");
-
-    let libs_dir = "./src_lib/lib_build";
-    println!("cargo:rustc-link-search=native={}", libs_dir);
-    println!("cargo:rustc-link-lib=dylib=dylib_for_rust");
-    println!("cargo:rustc-link-lib=static=static_for_rust");
-
-    move_dylib_files(&Path::new(&lib_dir), &Path::new(&profile_dir))
-        .expect("failed to move dylib files");
+    // ...已有代码...
+    let profile = std::env::var("PROFILE").unwrap();
+    let search_dir = format!("../../target/{}", profile); // 注意路径
+    println!("cargo:rustc-link-search=native={}", search_dir);
+    println!("cargo:rustc-link-lib=dylib=cdylib_gen");
+    println!("cargo:rustc-link-lib=static=staticlib_gen");
 }
-
-
 ```
-[rustc-link-search](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search) 指令告诉 Cargo 从哪里搜索库文件。 [rustc-link-lib](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) 指令告诉 Cargo 哪些库文件需要链接。
 
+> **注意**：`cdylib_gen.dll` 和 `staticlib_gen.lib` 需位于 `target/{profile}` 目录下，或通过 `cargo:rustc-link-search` 指定路径。
 
-对于动态库(Windows上的 `dll` 文件，Linux上的 `so` 文件)，我们还需要将它们移动到可执行程序所在的目录，因此我们定义 `move_dylib_files()` 函数来完成此操作。
+### 3.2 在 main.rs 调用库函数
 
-
-修改 `src/main.rs`  告诉 rustc 我们要调用的库函数是什么样子的。请注意，这两个函数 `static_call()` 和 `dylib_call()` 是包含在此存储库中的静态和动态库文件中的函数，如果您使用自己的库文件，请修改相应的函数签名。
-
+编辑 `src/main.rs`：
 
 ```rust
-extern crate core;
-use core::ffi::c_int;
-
 extern "C" {
-    fn add(a: c_int, b: c_int) -> c_int;
-    fn static_call(a: c_int, b: c_int) -> c_int;
-    fn dylib_call(a: c_int, b: c_int) -> c_int;
+    fn add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
+    fn cdylib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
+    fn staticlib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
 }
 
 fn main() {
-
     unsafe {
-        println!("[Rust] Calling function in C file");
-        let result = add(1, 5);
-        println!("[Rust] Result from c file: {} \n", result);
-
-        println!("[Rust] Calling function in static library");
-        let result = static_call(10, 5);
-        println!("[Rust] Result from static library: {}\n", result);
-
-        println!("[Rust] Calling function in dynamic library");
-        let result = dylib_call(100, 5);
-        println!("[Rust] Result from dynamic library: {}\n", result);
+        call_lib_fn!(add, 1, 2, buf("Lucy", 1024), "C 源码");
+        call_lib_fn!(cdylib_add, 1, 2, buf("Lee", 1024), "动态库");
+        call_lib_fn!(staticlib_add, 3, 4, buf("Chen", 1024), "静态库");
     }
 }
+```
+
+执行：
+
+```shell
+cargo run
+```
+
+输出示例：
 
 ```
-现在我们可以使用 Cargo 来链接 C 库并运行程序:
-```shell
-$ cargo clean && cargo run
+[Rust] 调用 C 源码
+[C source] Hello Lucy
+[C source] The result (1 + 2) is 3!
+[Rust] C 源码 返回: 3
+
+[Rust] 调用 动态库
+[Rust cdylib] Hello Lee
+[Rust cdylib] The result (1 + 2) is 3!
+[Rust] 动态库 返回: 3
+
+[Rust] 调用 静态库
+[Rust staticlib] Hello Chen
+[Rust staticlib] The result (3 + 4) is 7!
+[Rust] 静态库 返回: 7
 ```
+
+---
+
+## 常见问题与提示
+
+- 路径问题：确保 `build.rs` 中的库搜索路径正确。
+- Windows 下动态库需在可执行文件同目录或 PATH 路径下。
+- Rust/C 交互时注意类型匹配，推荐用 `std::os::raw` 类型。
+- 若遇到链接错误，检查库名、路径、crate-type 配置。
+
+---
+
+## 总结
+
+通过本教程，你可以：
+
+1. 在 Rust 工程中集成并调用 C 代码；
+2. 用 Rust 编译出遵循 C ABI 的动态库和静态库；
+3. 在 Rust 中调用这些库，实现跨语言互操作。
+
+如需完整示例代码，可参考本项目结构和上述代码片段。

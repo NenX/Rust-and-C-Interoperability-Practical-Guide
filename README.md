@@ -1,219 +1,333 @@
-# How to call C libraries from Rust
+# Rust and C Interoperability Practical Guide
 
 English · [中文](./README-zh_CN.md)
 
-This tutorial was inspired by [rust-ffi-to-c](https://github.com/vanjacosic/rust-ffi-to-c)
 
-This is a nanny tutorial on how to call C libraries from Rust.
 
-This repository has the final code for this tutorial, and it works well on both Windows and Linux.
+This tutorial systematically introduces how to integrate C code into a Rust project, how to use Rust to compile dynamic and static libraries that conform to the C ABI, and how to call these libraries from Rust. It is suitable for developers with some Rust/C experience.
 
-Clone it and run it using `cargo run`.
+---
+
+## 1. Integrating C Code in a Rust Project
+
+This section explains how to directly integrate and call C source code in a Rust project.
+
+### 1.1 Create a Workspace
+
+First, create a workspace and configure its members:
 
 ```shell
-$ cargo run
-
-warning: test_ffi@0.1.0: move "./src_lib/lib_build/libdylib_for_rust.so" to "./target/debug/libdylib_for_rust.so"
-warning: test_ffi@0.1.0: move "./src_lib/lib_build/dylib_for_rust.dll" to "./target/debug/dylib_for_rust.dll"
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
-     Running `target/debug/test_ffi`
-
-[Rust] Calling function in C file
-[C] source: Argument a is:{ 1 }, Argument b is:{ 5 }
-[C] source: returning the result { 6 } to Rust
-[Rust] Result from c file: 6
-
-[Rust] Calling function in static library
-[C] static_call: Argument a is:{ 10 }, Argument b is:{ 5 }
-[C] static_call: returning the result { 15 } to Rust
-[Rust] Result from static library: 15
-
-[Rust] Calling function in dynamic library
-[C] dylib_call: Argument a is:{ 100 }, Argument b is:{ 5 }
-[C] dylib_call: returning the result { 105 } to Rust
-[Rust] Result from dynamic library: 105
-
+cargo new my_workspace --lib
+cd my_workspace
 ```
 
-## Tutorial
+Edit the root `Cargo.toml`:
 
-In this tutorial, Rust's interaction with C takes two forms. In the first form, Cargo will compile programs written in C, and Rust calls the functions in them. In another form, we need to deal with C libraries, both static and dynamic.
+```toml
+[workspace]
+members = ["packages/*"]
+```
 
+Create the `packages` directory and enter it:
 
-### 1. Compile the C source code through Cargo and call the functions in Rust.
+```shell
+mkdir packages
+cd packages
+```
 
-First, we need to execute `cargo new hello-ffi` to create a completely new project to conduct our experiment.
+Create a binary crate for integrating C code:
 
-Now, let's say we have some C source code, create a new `c/add.c` file, and we need to call the `add()` function in Rust.
+```shell
+cargo new call_libs
+cd call_libs
+```
 
+### 1.2 Add C Source Code
 
+In the call_libs crate, create the C source file implementing the required C function.
+
+Create a `c` directory and add `clib.c`:
 
 ```c
-// add.c
 #include <stdio.h>
 #include <stdint.h>
 
-int32_t add(int32_t a, int32_t b)
-{
-    int32_t result = a + b;
-    printf("[C] source: Argument a is:{ %i }, Argument b is:{ %i } \n", a, b);
-    printf("[C] source: returning the result { %i } to Rust\n", result);
-    return result;
+int32_t add(int32_t a, int32_t b, char *result) {
+    printf("[C source] Hello %s\n", result);
+    int32_t sum = a + b;
+    sprintf(result, "[C source] The result (%d + %d) is %d!", a, b, sum);
+    return sum;
 }
-
 ```
-This function takes two arguments of type `int32_t`, computes their sum, and returns it to the caller.
 
+### 1.3 Configure Cargo.toml
 
+Add the `cc` dependency to automatically compile the C source code.
 
-The next step of work, we need to install [`cc`](https://crates.io/crates/cc) crate.
-
-
+In `packages/call_libs/Cargo.toml` add `cc` as a build-dependency:
 
 ```toml
 [build-dependencies]
 cc = "1.0"
 ```
 
-Then create a `build.rs` file in the project root and write our build script, which tells Cargo how to properly compile our C source code.
+### 1.4 Write build.rs
 
+Use a build script to automatically compile the C code and link it to the Rust project.
 
+In `packages/call_libs`, create `build.rs`:
 
 ```rust
-extern crate cc;
-
 fn main() {
-    cc::Build::new().file("c/add.c").compile("add");
+    cc::Build::new().file("c/clib.c").compile("clib");
 }
 ```
-Before rustc starts compiling our Rust program, the `build.rs` file will be called to compile the C source code.
 
-But we also need to tell rustc what our C function looks like. Modify `src/main.rs`:
+### 1.5 Call C Functions from Rust
+
+Declare the C function via FFI and call it safely in Rust code.
+
+Edit `src/main.rs`:
 
 ```rust
-// This is our entry file for calling both static and dynamic libraries
-extern crate core;
-use core::ffi::c_int;
+use std::ffi::{CStr, c_char, c_int};
 
 extern "C" {
-    fn add(a: c_int, b: c_int) -> c_int;
+    fn add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
+}
+
+fn buf(label: &str, capacity: usize) -> Vec<i8> {
+    let mut b = label.as_bytes().to_vec();
+    b.resize(capacity, 0);
+    b.iter().map(|&i| i as i8).collect()
+}
+
+macro_rules! call_lib_fn {
+    ($fn:expr, $a:expr, $b:expr, $buf:expr, $desc:expr) => {{
+        let mut b = $buf;
+        println!("[Rust] Calling {}", $desc);
+        let result = $fn($a, $b, b.as_mut_ptr());
+        let msg = unsafe { CStr::from_ptr(b.as_ptr()).to_str().unwrap() };
+        println!("{}", msg);
+        println!("[Rust] {} returned: {}\n", $desc, result);
+    }};
 }
 
 fn main() {
-
     unsafe {
-        println!("[Rust] Calling function in C file");
-        let result = add(1, 5);
-        println!("[Rust] Result from c file: {} \n", result);
+        call_lib_fn!(add, 1, 2, buf("Lucy", 1024), "C source");
     }
 }
-
 ```
 
-
-We use [`extern`](https://doc.rust-lang.org/reference/items/external-blocks.html) to reference the `add()` function, which is written in C (`c/add.c`).
-
-In this case we want to add integers, so we import a C-compatible integer type into Rust from `core:ffi`. 
-
-We then define the argument types and return type for our C function as `c_int` (equivalent to `i32` in Rust).
-
-Any use of foreign function is considered unsafe because the Rust compiler can't guarantee memory safety in foreign code. 
-So in our main Rust file (`src/main.rs`) we call the function in an `unsafe` block, then pass in two `i32` integers, and print the result.
-
-And now we can use Cargo to build both the C and Rust code and run the program:
+Run:
 
 ```shell
-$ cargo clean && cargo run
+cargo run
 ```
 
-### 2. Link the C library and call the functions in it.
+Sample output:
 
-Let's say you got some dynamic and static C libraries from somewhere else, and now you need to call those library functions in Rust.
+```
+[Rust] Calling C source
+[C source] Hello Lucy
+[C source] The result (1 + 2) is 3!
+[Rust] C source returned: 3
+```
 
-Create a new `src_lib/lib_build` folder to store the C library files (of course you can copy the corresponding files in this repository for experiments). Modify `build.rs` to tell Cargo how to link these library files.
+> **Tip**: If you encounter linking errors, check the C file path, build.rs configuration, and dependencies.
+
+---
+
+## 2. Compiling Dynamic and Static Libraries with Rust (C ABI)
+
+This section explains how to use Rust to generate dynamic and static libraries callable from C and other languages.
+
+### 2.1 Compile a Dynamic Library (cdylib)
+
+Create a library crate, set crate-type to `cdylib`, and implement the exported function.
+
+In the `packages` directory, create the library crate:
+
+```shell
+cd ..
+cargo new cdylib_gen --lib
+cd cdylib_gen
+```
+
+Edit `Cargo.toml` to add crate-type:
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+```
+
+Edit `src/lib.rs`:
 
 ```rust
-use std::ffi::OsStr;
-use std::path::Path;
-use std::{env, fs};
+use std::ffi::{CStr, CString, c_char, c_int};
+use std::ptr;
 
-extern crate cc;
-
-fn move_dylib_files(from_dir: &Path, to_dir: &Path) -> std::io::Result<()> {
-    if !to_dir.exists() {
-        fs::create_dir_all(to_dir)?;
+#[no_mangle]
+pub extern "C" fn cdylib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int {
+    let sum = a + b;
+    unsafe {
+        let name = CStr::from_ptr(result).to_str().unwrap();
+        println!("[Rust cdylib] Hello {name}");
+        let msg = format!("[Rust cdylib] The result ({a} + {b}) is {sum}!");
+        let msg = CString::new(msg).unwrap();
+        ptr::copy_nonoverlapping(msg.as_ptr(), result, msg.as_bytes().len() + 1);
     }
-
-    for entry in fs::read_dir(from_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let ext = path.extension();
-        if path.is_file() && (ext == Some(OsStr::new("dll")) || ext == Some(OsStr::new("so"))) {
-            let dest_path = to_dir.join(path.file_name().unwrap());
-            println!("cargo:warning=move {path:?} to {dest_path:?}");
-            fs::copy(&path, &dest_path)?;
-        }
-    }
-
-    Ok(())
+    sum
 }
+```
 
+Build:
+
+```shell
+cargo build
+```
+
+After building, `cdylib_gen.dll` (on Windows) will be generated in `target/debug/`.
+
+### 2.2 Compile a Static Library (staticlib)
+
+Create a library crate, set crate-type to `staticlib`, and implement the exported function.
+
+Also in the `packages` directory, create the static library crate:
+
+```shell
+cd ..
+cargo new staticlib_gen --lib
+cd staticlib_gen
+```
+
+Edit `Cargo.toml` to add crate-type:
+
+```toml
+[lib]
+crate-type = ["staticlib"]
+```
+
+Edit `src/lib.rs`:
+
+```rust
+use std::ffi::{CStr, CString, c_char, c_int};
+use std::ptr;
+
+#[no_mangle]
+pub extern "C" fn staticlib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int {
+    let sum = a + b;
+    unsafe {
+        let name = CStr::from_ptr(result).to_str().unwrap();
+        println!("[Rust staticlib] Hello {name}");
+        let msg = format!("[Rust staticlib] The result ({a} + {b}) is {sum}!");
+        let msg = CString::new(msg).unwrap();
+        ptr::copy_nonoverlapping(msg.as_ptr(), result, msg.as_bytes().len() + 1);
+    }
+    sum
+}
+```
+
+Build:
+
+```shell
+cargo build
+```
+
+After building, `staticlib_gen.lib` (on Windows) will be generated in `target/debug/`.
+
+---
+
+## 3. Calling C ABI Dynamic and Static Libraries from Rust
+
+This section explains how to link and call dynamic and static libraries in a Rust project.
+
+Return to the `call_libs` directory:
+
+```shell
+cd ../call_libs
+```
+
+### 3.1 Configure build.rs to Link Libraries
+
+Edit `build.rs` and add the following:
+
+```rust
 fn main() {
-    let profile = env::var("PROFILE").unwrap();
-    let profile_dir = format!("./target/{}/", profile);
-    let lib_dir = String::from("./src_lib/lib_build");
-
-    cc::Build::new().file("c/add.c").compile("add");
-
-    let libs_dir = "./src_lib/lib_build";
-    println!("cargo:rustc-link-search=native={}", libs_dir);
-    println!("cargo:rustc-link-lib=dylib=dylib_for_rust");
-    println!("cargo:rustc-link-lib=static=static_for_rust");
-
-    move_dylib_files(&Path::new(&lib_dir), &Path::new(&profile_dir))
-        .expect("failed to move dylib files");
+    // ...existing code...
+    let profile = std::env::var("PROFILE").unwrap();
+    let search_dir = format!("../../target/{}", profile); // Note the path
+    println!("cargo:rustc-link-search=native={}", search_dir);
+    println!("cargo:rustc-link-lib=dylib=cdylib_gen");
+    println!("cargo:rustc-link-lib=static=staticlib_gen");
 }
-
-
 ```
-The [rustc-link-search](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-search) instruction tells Cargo where to find the libraries. The [rustc-link-lib](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) instruction tells Cargo to link the given library.
 
-For dynamic libraries (`dll` files on Windows, `so` files on Linux), we also need to move them to the directory where the executable program resides, so we define the `move_dylib_files()` function to do this.
+> **Note**: `cdylib_gen.dll` and `staticlib_gen.lib` must be in the `target/{profile}` directory, or specify the path via `cargo:rustc-link-search`.
 
-Modify `src/main.rs` to tell rustc what the library function we want to call looks like. Please note that the two functions `static_call()` and `dylib_call()` are the functions contained in the static and dynamic library files in this repository, and if you use your own library files, please modify the corresponding function signatures.
+### 3.2 Call Library Functions in main.rs
 
-
+Edit `src/main.rs`:
 
 ```rust
-extern crate core;
-use core::ffi::c_int;
-
 extern "C" {
-    fn add(a: c_int, b: c_int) -> c_int;
-    fn static_call(a: c_int, b: c_int) -> c_int;
-    fn dylib_call(a: c_int, b: c_int) -> c_int;
+    fn add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
+    fn cdylib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
+    fn staticlib_add(a: c_int, b: c_int, result: *mut c_char) -> c_int;
 }
 
 fn main() {
-
     unsafe {
-        println!("[Rust] Calling function in C file");
-        let result = add(1, 5);
-        println!("[Rust] Result from c file: {} \n", result);
-
-        println!("[Rust] Calling function in static library");
-        let result = static_call(10, 5);
-        println!("[Rust] Result from static library: {}\n", result);
-
-        println!("[Rust] Calling function in dynamic library");
-        let result = dylib_call(100, 5);
-        println!("[Rust] Result from dynamic library: {}\n", result);
+        call_lib_fn!(add, 1, 2, buf("Lucy", 1024), "C source");
+        call_lib_fn!(cdylib_add, 1, 2, buf("Lee", 1024), "dynamic library");
+        call_lib_fn!(staticlib_add, 3, 4, buf("Chen", 1024), "static library");
     }
 }
-
 ```
-And now we can use Cargo to link the C libraries and run the program:
+
+Run:
 
 ```shell
-$ cargo clean && cargo run
+cargo run
 ```
+
+Sample output:
+
+```
+[Rust] Calling C source
+[C source] Hello Lucy
+[C source] The result (1 + 2) is 3!
+[Rust] C source returned: 3
+
+[Rust] Calling dynamic library
+[Rust cdylib] Hello Lee
+[Rust cdylib] The result (1 + 2) is 3!
+[Rust] dynamic library returned: 3
+
+[Rust] Calling static library
+[Rust staticlib] Hello Chen
+[Rust staticlib] The result (3 + 4) is 7!
+[Rust] static library returned: 7
+```
+
+---
+
+## Common Issues and Tips
+
+- Path issues: Ensure the library search path in `build.rs` is correct.
+- On Windows, dynamic libraries must be in the same directory as the executable or in the PATH.
+- When using Rust/C FFI, pay attention to type matching; it is recommended to use types from `std::os::raw`.
+- If you encounter linking errors, check the library name, path, and crate-type configuration.
+
+---
+
+## Summary
+
+With this tutorial, you can:
+
+1. Integrate and call C code in a Rust project;
+2. Use Rust to compile dynamic and static libraries conforming to the C ABI;
+3. Call these libraries from Rust, enabling cross-language interoperability.
+
+For complete example code, refer to the project structure and code snippets above.
