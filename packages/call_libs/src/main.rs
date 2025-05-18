@@ -33,9 +33,10 @@ macro_rules! CallLibFn {
 }
 fn dynamic_load_bind() {
     #[cfg(target_os = "linux")]
-    let lib_path = "external_lib/lib_build/libexternal_dy.so";
+    let lib_file = "libexternal_dy.so";
     #[cfg(target_os = "windows")]
-    let lib_path = "target/debug/cdylib_gen.dll";
+    let lib_file = "external_dy.dll";
+    let lib_path = format!("external_lib/lib_build/{}",lib_file);
 
     unsafe {
         let lib = Library::new(lib_path).expect("Failed to load the dynamic library.");

@@ -11,7 +11,7 @@ cmake ..
 
 Set-Location ..
 
-.\ms_build.ps1 .\build\dylib_for_rust.sln /p:Configuration=Release
+.\ms_build.ps1 .\build\external_dy.sln /p:Configuration=Release
 
 $files = Get-ChildItem -Path lib_build\Release -File
 

@@ -285,7 +285,8 @@ cd ../call_libs
 
 ```rust
 fn main() {
-    // ...已有代码...
+    cc::Build::new().file("c/clib.c").compile("clib");
+
     let profile = std::env::var("PROFILE").unwrap();
     let search_dir = format!("target/{}", profile);
     println!("cargo::rustc-link-search=native={}", search_dir);
@@ -358,7 +359,7 @@ fn main() {
 ```shell
 ./build.sh # 如果你使用 windows 系统, 请换成 .\build.ps1
 ```
-我可以看到在 `external_lib/lib_build` 出现了 `libexternal_dy.so`(在 windows 上是)
+我可以看到在 `external_lib/lib_build` 出现了 `libexternal_dy.so`(在 windows 上是 `external_dy.dll`)
 ### 4.2 添加依赖
 
 在 `packages/call_libs/Cargo.toml` 中添加 `libloading` 依赖：
@@ -378,32 +379,32 @@ libloading = "0.8"
 use libloading::{Library, Symbol};
 use std::ffi::{CStr, CString, c_char, c_int};
 
-fn main() {
-    // ...已有代码...
-
-    // 动态加载动态库并调用函数
+fn dynamic_load_bind() {
     #[cfg(target_os = "linux")]
-    let lib_path = "target/debug/libcdylib_gen.so";
+    let lib_file = "libexternal_dy.so";
     #[cfg(target_os = "windows")]
-    let lib_path = "target/debug/cdylib_gen.dll";
+    let lib_file = "external_dy.dll";
+    let lib_path = format!("external_lib/lib_build/{}",lib_file);
 
     unsafe {
-        let lib = Library::new(lib_path).expect("无法加载动态库");
-        // 声明符号类型
+        let lib = Library::new(lib_path).expect("Failed to load the dynamic library.");
         type CdylibAdd = unsafe extern "C" fn(c_int, c_int, *mut c_char) -> c_int;
-        let func: Symbol<CdylibAdd> = lib.get(b"cdylib_add").expect("无法找到符号");
+        let dyloading_add: Symbol<CdylibAdd> = lib
+            .get(b"dyloading_add")
+            .expect("Failed to find the symbol.");
 
-        let mut buf = vec![0i8; 1024];
-        let name = CString::new("Dylan").unwrap();
-        // 先将名字写入 buf
-        buf[..name.as_bytes().len()].copy_from_slice(unsafe { std::mem::transmute::<&[u8], &[i8]>(name.as_bytes()) });
-        println!("[Rust] 动态加载调用 cdylib_add");
-        let result = func(10, 20, buf.as_mut_ptr());
-        let msg = CStr::from_ptr(buf.as_ptr()).to_str().unwrap();
-        println!("{}", msg);
-        println!("[Rust] 动态加载 cdylib_add 返回: {}", result);
+        CallLibFn! { dyloading_add, 8, 9, buf("Jack", 1024), "dynamic loading library" };
     }
 }
+fn main() {
+    unsafe {
+        CallLibFn! { add, 1, 2, buf("Lucy", 1024), "C source code" };
+        CallLibFn! { cdylib_add, 1, 2, buf("Lee", 1024), "dynamic library" };
+        CallLibFn! { staticlib_add, 3, 4, buf("Chen", 1024), "static library" };
+    }
+    dynamic_load_bind()
+}
+
 ```
 
 ### 4.4 运行效果

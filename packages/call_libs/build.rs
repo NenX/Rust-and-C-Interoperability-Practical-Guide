@@ -3,7 +3,7 @@
 
 extern crate cc;
 
-// src 不能包含 lib.rs 否则编译不成功
+
 fn main() {
     cc::Build::new().file("c/clib.c").compile("clib");
 
