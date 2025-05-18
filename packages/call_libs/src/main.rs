@@ -1,7 +1,10 @@
 // 这是我们的入口文件，用来调用静态库和动态库
 // This is our entry file for calling both static and dynamic libraries
 
-use std::ffi::{self, c_char, c_int};
+use std::{
+    ffi::{self, c_char, c_int},
+    path::Path,
+};
 
 use libloading::{Library, Symbol};
 
@@ -31,14 +34,14 @@ macro_rules! CallLibFn {
         println!("[Rust] Result from {}: {}\n", $t, result);
     };
 }
-fn dynamic_load_bind() {
+unsafe fn dynamic_load_bind() {
     #[cfg(target_os = "linux")]
     let lib_file = "libexternal_dy.so";
     #[cfg(target_os = "windows")]
     let lib_file = "external_dy.dll";
-    let lib_path = format!("external_lib/lib_build/{}",lib_file);
-
-    unsafe {
+    let lib_path = format!("external_lib/lib_build/{}", lib_file);
+    
+    if Path::new(&lib_path).exists() {
         let lib = Library::new(lib_path).expect("Failed to load the dynamic library.");
         type CdylibAdd = unsafe extern "C" fn(c_int, c_int, *mut c_char) -> c_int;
         let dyloading_add: Symbol<CdylibAdd> = lib
@@ -53,6 +56,6 @@ fn main() {
         CallLibFn! { add, 1, 2, buf("Lucy", 1024), "C source code" };
         CallLibFn! { cdylib_add, 1, 2, buf("Lee", 1024), "dynamic library" };
         CallLibFn! { staticlib_add, 3, 4, buf("Chen", 1024), "static library" };
+        dynamic_load_bind()
     }
-    dynamic_load_bind()
 }

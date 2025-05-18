@@ -353,13 +353,10 @@ fn main() {
 
 ### 4.1 制作我们的外部动态链接库
 
-进入 `external_lib` 目录执行脚本:
+进入 `external_lib` 目录执行 `.\build.ps1` (在 Linux 换成 `./build.sh`)
 
+我可以看到在 `external_lib/lib_build` 出现了 `external_dy.dll`(在 Linux 上是 `libexternal_dy.so`)
 
-```shell
-./build.sh # 如果你使用 windows 系统, 请换成 .\build.ps1
-```
-我可以看到在 `external_lib/lib_build` 出现了 `libexternal_dy.so`(在 windows 上是 `external_dy.dll`)
 ### 4.2 添加依赖
 
 在 `packages/call_libs/Cargo.toml` 中添加 `libloading` 依赖：
@@ -379,14 +376,14 @@ libloading = "0.8"
 use libloading::{Library, Symbol};
 use std::ffi::{CStr, CString, c_char, c_int};
 
-fn dynamic_load_bind() {
+unsafe fn dynamic_load_bind() {
     #[cfg(target_os = "linux")]
     let lib_file = "libexternal_dy.so";
     #[cfg(target_os = "windows")]
     let lib_file = "external_dy.dll";
-    let lib_path = format!("external_lib/lib_build/{}",lib_file);
-
-    unsafe {
+    let lib_path = format!("external_lib/lib_build/{}", lib_file);
+    
+    if Path::new(&lib_path).exists() {
         let lib = Library::new(lib_path).expect("Failed to load the dynamic library.");
         type CdylibAdd = unsafe extern "C" fn(c_int, c_int, *mut c_char) -> c_int;
         let dyloading_add: Symbol<CdylibAdd> = lib
@@ -401,8 +398,8 @@ fn main() {
         CallLibFn! { add, 1, 2, buf("Lucy", 1024), "C source code" };
         CallLibFn! { cdylib_add, 1, 2, buf("Lee", 1024), "dynamic library" };
         CallLibFn! { staticlib_add, 3, 4, buf("Chen", 1024), "static library" };
+        dynamic_load_bind()
     }
-    dynamic_load_bind()
 }
 
 ```
@@ -412,31 +409,18 @@ fn main() {
 执行 `cargo run`，你会看到类似如下输出：
 
 ```
-[Rust] 动态加载调用 cdylib_add
-[Rust cdylib] Hello Dylan
-[Rust cdylib] The result (10 + 20) is 30!
-[Rust] 动态加载 cdylib_add 返回: 30
+
+[Rust] Calling function in dynamic loading library
+[External dyloading] Hello Jack
+[External dyloading] The result (8 + 9) is 17!
+[Rust] Result from dynamic loading library: 17
+
 ```
 
 ---
 
-> **提示**：  
-> - 使用 libloading 可以让你的程序在运行时灵活加载/卸载动态库，适合插件机制等场景。  
-> - 注意符号名需与库中导出的函数名一致，且类型声明要完全匹配。  
-> - 路径需指向已编译好的动态库文件。
 
----
-
-你可以根据实际项目结构调整路径和调用方式。
-
----
 
 ## 总结
 
-通过本教程，你可以：
-
-1. 在 Rust 工程中集成并调用 C 代码；
-2. 用 Rust 编译出遵循 C ABI 的动态库和静态库；
-3. 在 Rust 中调用这些库，实现跨语言互操作。
-
-如需完整示例代码，可参考本项目结构和上述代码片段。
+通过本教程，你可以了解 Rust 与 C 如何进行交互。如需完整示例代码，可参考本项目结构和上述代码片段。
