@@ -1,4 +1,5 @@
 build/
+lib_build/
 src_lib/lib_build/
 .vscode/
 *.o
