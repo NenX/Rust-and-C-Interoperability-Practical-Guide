@@ -4,13 +4,18 @@
 
 
 
-本教程系统介绍如何在 Rust 工程中集成 C 代码、如何用 Rust 编译出遵循 C 语言二进制接口（ABI）的动态库和静态库，以及如何在 Rust 中调用这些库。适合有一定 Rust/C 基础的开发者。
+本教程系统介绍以下几个方面:
+- 如何在 Rust 工程中集成 C 代码
+- 如何用 Rust 编译出遵循 C 语言二进制接口（ABI）的动态库和静态库
+- 如何在 Rust 中链接和调用静态库和动态库
+- 如何在 Rust 中动态加载、绑定并调用动态库
 
 
 这个存储库包含本教程的最终代码，它在Windows和Linux上都能很好地工作。
 
 克隆它并使用 `cargo run` 运行：
 ```shell
+
 [Rust] Calling function in C source code
 [C source] Hello Lucy
 [C source] The result (1 + 2) is 3!
@@ -25,6 +30,12 @@
 [Rust staticlib] Hello Chen
 [Rust staticlib] The result (3 + 4) is 7!
 [Rust] Result from static library: 7
+
+[Rust] Calling function in dynamic loading library
+[External dyloading] Hello Jack
+[External dyloading] The result (8 + 9) is 17!
+[Rust] Result from dynamic loading library: 17
+
 ```
 
 ---
@@ -335,12 +346,87 @@ fn main() {
 
 ---
 
-## 常见问题与提示
+## 4. 利用 libloading 动态加载并绑定动态链接库
 
-- 路径问题：确保 `build.rs` 中的库搜索路径正确。
-- Windows 下动态库需在可执行文件同目录或 PATH 路径下。
-- Rust/C 交互时注意类型匹配，推荐用 `std::os::raw` 类型。
-- 若遇到链接错误，检查库名、路径、crate-type 配置。
+本节介绍如何使用 [libloading](https://crates.io/crates/libloading) crate，在运行时动态加载动态链接库（如 `.so` 或 `.dll`），并绑定其中的函数。
+
+### 4.1 制作我们的外部动态链接库
+
+进入 `external_lib` 目录执行脚本:
+
+
+```shell
+./build.sh # 如果你使用 windows 系统, 请换成 .\build.ps1
+```
+我可以看到在 `external_lib/lib_build` 出现了 `libexternal_dy.so`(在 windows 上是)
+### 4.2 添加依赖
+
+在 `packages/call_libs/Cargo.toml` 中添加 `libloading` 依赖：
+
+```toml
+[dependencies]
+libloading = "0.8"
+```
+
+### 4.3 示例：动态加载 cdylib_gen 动态库
+
+
+
+编辑 `src/main.rs`，添加如下代码：
+
+```rust
+use libloading::{Library, Symbol};
+use std::ffi::{CStr, CString, c_char, c_int};
+
+fn main() {
+    // ...已有代码...
+
+    // 动态加载动态库并调用函数
+    #[cfg(target_os = "linux")]
+    let lib_path = "target/debug/libcdylib_gen.so";
+    #[cfg(target_os = "windows")]
+    let lib_path = "target/debug/cdylib_gen.dll";
+
+    unsafe {
+        let lib = Library::new(lib_path).expect("无法加载动态库");
+        // 声明符号类型
+        type CdylibAdd = unsafe extern "C" fn(c_int, c_int, *mut c_char) -> c_int;
+        let func: Symbol<CdylibAdd> = lib.get(b"cdylib_add").expect("无法找到符号");
+
+        let mut buf = vec![0i8; 1024];
+        let name = CString::new("Dylan").unwrap();
+        // 先将名字写入 buf
+        buf[..name.as_bytes().len()].copy_from_slice(unsafe { std::mem::transmute::<&[u8], &[i8]>(name.as_bytes()) });
+        println!("[Rust] 动态加载调用 cdylib_add");
+        let result = func(10, 20, buf.as_mut_ptr());
+        let msg = CStr::from_ptr(buf.as_ptr()).to_str().unwrap();
+        println!("{}", msg);
+        println!("[Rust] 动态加载 cdylib_add 返回: {}", result);
+    }
+}
+```
+
+### 4.4 运行效果
+
+执行 `cargo run`，你会看到类似如下输出：
+
+```
+[Rust] 动态加载调用 cdylib_add
+[Rust cdylib] Hello Dylan
+[Rust cdylib] The result (10 + 20) is 30!
+[Rust] 动态加载 cdylib_add 返回: 30
+```
+
+---
+
+> **提示**：  
+> - 使用 libloading 可以让你的程序在运行时灵活加载/卸载动态库，适合插件机制等场景。  
+> - 注意符号名需与库中导出的函数名一致，且类型声明要完全匹配。  
+> - 路径需指向已编译好的动态库文件。
+
+---
+
+你可以根据实际项目结构调整路径和调用方式。
 
 ---
 
